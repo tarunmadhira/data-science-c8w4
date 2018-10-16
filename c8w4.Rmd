@@ -1,0 +1,52 @@
+---
+title: "Machine Learning Project"
+author: "tarun madhira"
+date: "10/16/2018"
+output: html_document
+---
+#Loading and splitting Data
+I loaded the packages and the data. I subsequently removed the first 7 columns since they were irrelevant. I subdivided the training set into a sub train and a sub test set, to make predictions on the sub test set before applying it to the real testing set. I also removed the near zero variables and columns with predominantly NA's values since they have little impact on predictions.
+```{r load, cache= TRUE}
+suppressMessages(library(caret)) #library(rattle)
+training <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"); testing <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+#str(training); #View(training)
+training <- training[,-c(1:7)]; inBuild <- createDataPartition(training$classe, p = 0.7, list = F); train <- training[inBuild,]; test <- training[-inBuild,]
+nsv <- nearZeroVar(train, saveMetrics = T); train <- train[,!nsv$nzv]; count = matrix(nrow = nrow(train),ncol=ncol(train))
+for(i in 1:ncol(train)){
+  for(j in 1:nrow(train)){
+    if(is.na(train[j,i])){
+      count[j,i] = 1
+    }
+  }
+}
+numo <- apply(count,2,sum, na.rm=T); train <- subset(train,select=!(numo>0))
+```
+#Plot
+When we make plots like below and others, we can clearly notice that there is no discernable pattern for each of the 5 classes
+```{r plot, cache = TRUE}
+library(ggplot2)
+ggplot(data=train, aes(x = gyros_belt_x, y = gyros_belt_y, col = classe)) + geom_point()
+```
+
+#Decision Trees
+We can see that a regular rpart model doesn't do a good job at partioning the data
+```{r trees, cache = TRUE}
+mod <- train(classe ~ ., data = train, method = "rpart")
+#fancyRpartPlot(mod$finalModel)
+confusionMatrix(predict(mod,test), test$classe)$overall[1]
+```
+#GBM and Random Forest
+I applied first a GBM and then a RF model to get a high accuracy. I ended up using the RF model since it had a higher accuracy. I tried several GBM's with different cross-validation folds (3 folds had a slightly higher accuracy than 2 folds)
+```{r models, cache = TRUE}
+#gbm2 <- train(classe ~ ., data=train, method="gbm", verbose=F, trControl=trainControl(method="cv", number=2)); confusionMatrix(predict(gbm2,test),test$classe)$overall[1]
+#gbm3 <- train(classe ~ ., data=train, method="gbm", verbose=F, trControl=trainControl(method="cv", number=3)); confusionMatrix(predict(gbm3,test),test$classe)$overall[1]
+library(parallel); library(doParallel); cluster <- makeCluster(detectCores() - 1); registerDoParallel(cluster)
+rf <- train(classe ~ ., data=train, method="rf", verbose=F, trControl=trainControl(method="cv", number=5, allowParallel = TRUE))
+stopCluster(cluster); registerDoSEQ()
+confusionMatrix(predict(rf,test),test$classe)$overall[1]
+OutSampleError <- 1 - confusionMatrix(predict(rf,test),test$classe)$overall[1]
+OutSampleError
+predict(rf,testing)
+```
+#Conclusion
+As can be seen above the accuracy rate of the rf model is very high and the out of sample error rate estimate is very low (less than 1% as can be seen above in the OutSampleError value). The rf model was chosen for the prediction since it gave us the highest accuracy rate and the lowest out of sample error rate. **Note: I added some lines as comments as they were not essential**
